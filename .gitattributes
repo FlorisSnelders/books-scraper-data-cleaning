@@ -1,0 +1,6 @@
+# Normalise line endings for source files
+* text=auto
+
+# Keep data files byte-for-byte: raw CSV fields contain newlines on purpose
+data/*.csv -text
+*.xlsx binary
