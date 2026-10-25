@@ -89,12 +89,12 @@ def parse_availability(text: str) -> int | None:
 
 # --- The cleaning pipeline ---
 
-def as_code(value) -> str:
+def as_code(value, max_length: int = 60) -> str:
     """Format a value as Markdown code. Strings use repr() so hidden
     whitespace (\\n) and broken characters (\\x80) stay visible."""
     text = repr(value) if isinstance(value, str) else str(value)
-    if len(text) > 60:
-        text = text[:57] + "..."
+    if len(text) > max_length:
+        text = text[:max_length - 3] + "..."
     return "`" + text.replace("|", "\\|") + "`"
 
 
@@ -201,8 +201,9 @@ def write_excel(df: pd.DataFrame, path: Path) -> None:
         sheet.auto_filter.ref = sheet.dimensions  # filter dropdown on every column
 
         # Width = longest value in the column, capped so long titles/URLs don't take over
+        # (headers get extra room for the filter arrow)
         for i, column in enumerate(df.columns, start=1):
-            longest = max(df[column].astype(str).str.len().max(), len(column))
+            longest = max(df[column].astype(str).str.len().max(), len(column) + 3)
             sheet.column_dimensions[get_column_letter(i)].width = min(longest + 2, 60)
 
         price_letter = get_column_letter(df.columns.get_loc("price") + 1)
@@ -214,7 +215,7 @@ def markdown_table(df: pd.DataFrame, raw: bool = False) -> list[str]:
     """Render a small DataFrame as Markdown table lines."""
     def cell(value) -> str:
         if raw:
-            return as_code(value)
+            return as_code(value, max_length=100)
         if isinstance(value, float):
             return f"{value:.2f}"
         return str(value).replace("|", "\\|")
@@ -260,6 +261,19 @@ def write_report(raw: pd.DataFrame, clean: pd.DataFrame, issues: list[dict], pat
     lines += ["", "## Column names", "", "| Raw | Clean |", "|---|---|"]
     lines += [f"| {name} | `{to_snake_case(name)}` |" for name in raw.columns]
     lines += ["| *(new)* | `currency` (split out of the price) |"]
+
+    # Same title, different UPC: not a duplicate, but worth flagging to the client
+    shared_titles = clean[clean["title"].duplicated(keep=False)]
+    if not shared_titles.empty:
+        lines += [
+            "",
+            "## Worth knowing",
+            "",
+            f"{shared_titles['title'].nunique()} title(s) appear more than once with different UPCs, prices "
+            "and product pages. They are separate listings on the site, so all rows are kept:",
+            "",
+        ]
+        lines += markdown_table(shared_titles[["title", "upc", "price", "availability"]])
 
     rows = pick_examples(raw, clean)
     lines += [
